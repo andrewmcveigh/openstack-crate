@@ -5,6 +5,7 @@
      :refer [exec-checked-script exec-script package-manager package packages
              plan-when remote-directory remote-file service]]
     [pallet.crate :refer [defplan]]
+    [pallet.crate.openstack.core :refer [restart-services template-file]]
     [pallet.crate.mysql :as mysql]
     [pallet.script.lib :as lib]
     )
@@ -163,16 +164,20 @@ down ifconfig $IFACE down
   (mysql/create-user user password "root" *mysql-root-pass*)
   (mysql/create-database "quantum" user *mysql-root-pass*)
   (let [values {:user user :password password :internal-ip *internal-ip*}]
-    (remote-file "/etc/quantum/api-paste.ini"
-                 :template "etc/quantum/api-paste.ini"
-                 :values values
-                 :flag-on-changed "restart-quantum")
-    (remote-file "/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini"
-                 :template "etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini"
-                 :values values
-                 :flag-on-changed "restart-quantum")
-    )
-  )
+    (template-file "etc/quantum/api-paste.ini" values "restart-quantum")
+    (template-file "etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini"
+                   values
+                   "restart-quantum")
+    (template-file "etc/quantum/metadata_agent.ini" values "restart-quantum")
+    (template-file "etc/quantum/quantum.conf" values "restart-quantum")
+    (restart-services :flag "restart-quantum"
+                      "quantum-dhcp-agent" "quantum-l3-agent"
+                      "quantum-metadata-agent"
+                      "quantum-plugin-openvswitch-agent" "quantum-server"
+                      "dnsmasq")))
+
+
+(defplan nova-install [])
 
 (defplan install [& {:keys [interfaces admin-pass mysql-root-pass] :as opts}]
   (letfn [(iface-address [iface interfaces]
