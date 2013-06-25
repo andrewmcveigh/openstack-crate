@@ -5,7 +5,9 @@
      :refer [exec-checked-script exec-script package-manager package packages
              plan-when remote-directory remote-file service]]
     [pallet.crate :refer [defplan]]
-    [pallet.crate.openstack.core :refer [restart-services template-file]]
+    [pallet.crate.openstack.core
+     :refer [*mysql-root-pass* *internal-ip* *external-ip* *admin-pass*
+             restart-services template-file]]
     [pallet.crate.mysql :as mysql]
     [pallet.script.lib :as lib]
     )
@@ -51,11 +53,6 @@ netmask %3$s")
                         (string/join \newline (map interface-str interfaces))}
                :flag-on-changed "restart-network")
   (restart-network-interfaces :if-flag "restart-network"))
-
-(def ^:dynamic *mysql-root-pass* nil)
-(def ^:dynamic *internal-ip* nil)
-(def ^:dynamic *external-ip* nil)
-(def ^:dynamic *admin-pass* nil)
 
 (defplan mysql-install []
   (mysql/mysql-server *mysql-root-pass*)
