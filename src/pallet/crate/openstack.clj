@@ -4,10 +4,14 @@
     [pallet.actions
      :refer [exec-checked-script exec-script package-manager package packages
              plan-when remote-directory remote-file service]]
+    [pallet.api :as api]
     [pallet.crate :refer [defplan]]
     [pallet.crate.openstack.core
      :refer [*mysql-root-pass* *internal-ip* *external-ip* *admin-pass*
              restart-services template-file]]
+    [pallet.crate.openstack.cinder :as cinder]
+    [pallet.crate.openstack.horizon :as horizon]
+    [pallet.crate.openstack.nova :as nova]
     [pallet.crate.mysql :as mysql]
     [pallet.script.lib :as lib]
     )
@@ -174,8 +178,6 @@ down ifconfig $IFACE down
                       "dnsmasq")))
 
 
-(defplan nova-install [])
-
 (defplan install [& {:keys [interfaces admin-pass mysql-root-pass] :as opts}]
   (letfn [(iface-address [iface interfaces]
             (-> (filter (comp #{iface} first) interfaces)
@@ -192,4 +194,13 @@ down ifconfig $IFACE down
       (exec-script "sysctl net.ipv4.ip_forward=1")
       (keystone-install "keystone" admin-pass)
       ))
+  )
+
+(defn server-spec []
+  (api/server-spec
+    :extends [(horizon/server-spec)
+              (cinder/server-spec)
+              (nova/server-spec)
+              ] 
+    )
   )

@@ -6,6 +6,11 @@
 (def ^:dynamic *internal-ip* nil)
 (def ^:dynamic *external-ip* nil)
 (def ^:dynamic *admin-pass* nil)
+(def ^:dynamic *credentials*
+  "A map of openstack credentials, E.G.,
+  {:nova [\"nova\" \"nova-pass\"]
+   :quantum [\"quantum\" \"quantum-pass\"]}"
+  nil)
 
 (defn template-file [resource values & [flag]]
   (apply remote-file

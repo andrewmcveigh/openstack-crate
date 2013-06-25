@@ -1,17 +1,14 @@
 (ns pallet.crate.openstack.nova
   (:require
-    [clojure.string :as string]
     [pallet.actions
      :refer [exec-checked-script exec-script package-manager package packages
              plan-when remote-directory remote-file service]]
+    [pallet.api :as api]
     [pallet.crate :refer [defplan]]
     [pallet.crate.openstack.core
      :refer [*mysql-root-pass* *internal-ip* *external-ip* *admin-pass*
              restart-services template-file]]
-    [pallet.crate.mysql :as mysql]
-    [pallet.script.lib :as lib]
-    )
-  )
+    [pallet.crate.mysql :as mysql]))
 
 (defplan kvm []
   (packages :apt ["kvm" "libvirt-bin" "pm-utils"])
@@ -37,3 +34,7 @@
   (restart-services :flag "restart-nova"
                     "nova-api" "nova-cert" "nova-compute" "nova-conductor"
                     "nova-consoleauth" "nova-novncproxy" "nova-scheduler"))
+
+(defn server-spec []
+  (api/server-spec
+    :phases {:install (api/plan-fn (kvm) (nova))}))
