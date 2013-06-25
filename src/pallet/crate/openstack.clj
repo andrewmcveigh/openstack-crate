@@ -40,7 +40,7 @@ netmask %3$s")
       s)))
 
 (defn restart-network-interfaces [& {:keys [if-flag]}]
-  (plan-when (lib/flag? (keyword if-flag)) 
+  (plan-when (lib/flag? (keyword if-flag))
     (exec-checked-script "interfaces: up->down->up" "ifdown -a; ifup -a")))
 
 (defplan networking [interfaces]
@@ -70,7 +70,7 @@ netmask %3$s")
   (let [export (format
                  "export OS_TENANT_NAME=admin
                  export OS_USERNAME=admin
-                 export OS_PASSWORD=%s 
+                 export OS_PASSWORD=%s
                  export OS_AUTH_URL=\"http://%s:5000/v2.0/\""
                  *admin-pass*
                  *external-ip*)]
@@ -104,11 +104,74 @@ netmask %3$s")
   (exec-script "sh /tmp/keystone_endpoint_basic.sh")
   (exec-script "keystone user-list"))
 
-(defplan glance-install []
-  (package "glance")
-  (mysql/create-user user password "root" *mysql-root-pass*)
-  (mysql/create-database "glance" user *mysql-root-pass*)
+(defplan glance-install [user password]
+  (let [values {:user user :password password :internal-ip *internal-ip*}]
+    (package "glance")
+    (mysql/create-user user password "root" *mysql-root-pass*)
+    (mysql/create-database "glance" user *mysql-root-pass*)
+    (remote-file "/etc/glance/glance-api-paste.ini"
+                 :template "etc/glance/glance-api-paste.ini"
+                 :flag-on-changed "restart-glance"
+                 :values values)
+    (remote-file "/etc/glance/glance-registry-paste.ini"
+                 :template "etc/glance/glance-registry-paste.ini"
+                 :flag-on-changed "restart-glance"
+                 :values values)
+    (remote-file "/etc/glance/glance-api.conf"
+                 :template "etc/glance/glance-api.conf"
+                 :flag-on-changed "restart-glance"
+                 :values values)
+    (remote-file "/etc/glance/glance-registry.conf"
+                 :template "etc/glance/glance-registry.conf"
+                 :flag-on-changed "restart-glance"
+                 :values values)
+    (service "glance-api" :action :restart :if-flag "restart-glance")
+    (service "glance-registry" :action :restart :if-flag "restart-glance")))
 
+(defplan open-vswitch-install [interfaces & flags]
+  (let [flags (set flags)
+        eth1 "
+# VM internet Access
+auto eth1
+iface eth1 inet manual
+up ifconfig $IFACE 0.0.0.0 up
+up ip link set $IFACE promisc on
+down ip link set $IFACE promisc off
+down ifconfig $IFACE down
+        "]
+    (packages :apt ["openvswitch-switch" "openvswitch-datapath-dkms"])
+    (exec-script "ovs-vsctl add-br br-int")
+    (exec-script "ovs-vsctl add-br br-ext")
+    (when (:br-ext flags)
+      (let [s (map interface-str
+                   (concat (remove (comp #{"eth1"} first) interfaces)
+                           (assoc-in (vec (filter (comp #{"eth1"} first)
+                                                  interfaces))
+                                     [0 0] "br-ext")))
+            s (str (string/join \newline s) eth1)]
+        (remote-file "/etc/network/interfaces"
+                     :template "etc/network/interfaces"
+                     :values {:interfaces s}
+                     :flag-on-changed "restart-network")
+        (restart-network-interfaces :if-flag "restart-network"))
+      (exec-script "ovs-vsctl add-port br-ex eth1"))))
+
+(defplan quantum-install [user password]
+  (packages :apt ["quantum-server" "quantum-plugin-openvswitch"
+                  "quantum-plugin-openvswitch-agent" "dnsmasq"
+                  "quantum-dhcp-agent""quantum-l3-agent"])
+  (mysql/create-user user password "root" *mysql-root-pass*)
+  (mysql/create-database "quantum" user *mysql-root-pass*)
+  (let [values {:user user :password password :internal-ip *internal-ip*}]
+    (remote-file "/etc/quantum/api-paste.ini"
+                 :template "etc/quantum/api-paste.ini"
+                 :values values
+                 :flag-on-changed "restart-quantum")
+    (remote-file "/etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini"
+                 :template "etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini"
+                 :values values
+                 :flag-on-changed "restart-quantum")
+    )
   )
 
 (defplan install [& {:keys [interfaces admin-pass mysql-root-pass] :as opts}]
@@ -120,11 +183,11 @@ netmask %3$s")
               *internal-ip* (iface-address "eth1" interfaces)
               *admin-pass* admin-pass]
       (init-packages)
-      (networking interfaces) 
-      (mysql-install mysql-root-pass) 
-      (packages :apt ["rabbitmq-server" "ntp" "vlan" "bridge-utils"]) 
-      (exec-script "sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf") 
+      (networking interfaces)
+      (mysql-install mysql-root-pass)
+      (packages :apt ["rabbitmq-server" "ntp" "vlan" "bridge-utils"])
+      (exec-script "sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf")
       (exec-script "sysctl net.ipv4.ip_forward=1")
       (keystone-install "keystone" admin-pass)
-      )) 
+      ))
   )
