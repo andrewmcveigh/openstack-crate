@@ -11,7 +11,7 @@
     [pallet.crate.openstack.quantum :as quantum]))
 
 (defn server-spec
-  [& {:keys [cinder glance horizon keystone nova open-vswitch quantum
+  [& {:keys [cinder glance keystone nova quantum
              interfaces admin-pass mysql-root-pass]
       :as options}]
   (let [iface-address (fn [iface interfaces]
