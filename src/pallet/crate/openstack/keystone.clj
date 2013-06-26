@@ -8,10 +8,9 @@
     [pallet.crate.mysql :as mysql]
     [pallet.crate.openstack.core :as core]))
 
-(defplan install [{{:keys [internal-ip external-ip]} :interfaces
-                   {:keys [user password] :as keystone} :keystone
-                   :keys [mysql-root-pass]}]
-  (package "keystone")
+(defplan configure [{{:keys [internal-ip external-ip]} :interfaces
+                     {:keys [user password] :as keystone} :keystone
+                     :keys [mysql-root-pass]}]
   (mysql/create-user user password "root" mysql-root-pass)
   (mysql/create-database "keystone" user mysql-root-pass)
   (let [cmd "sed -i 's|^connection = .*$| connection = mysql://%s:%s@%s/keystone|g' /etc/keystone/keystone.conf"
@@ -20,22 +19,22 @@
                       :internal-ip internal-ip
                       :external-ip external-ip)]
     (exec-script ~cmd)
-    (service "keystone" :action :restart) 
-    (exec-script "keystone-manage db_sync") 
+    (service "keystone" :action :restart)
+    (exec-script "keystone-manage db_sync")
     (remote-file "/tmp/keystone_basic.sh"
                  :template "scripts/keystone_basic.sh"
                  :values values
                  :owner "root"
                  :group "root"
-                 :mode "0755") 
+                 :mode "0755")
     (remote-file "/tmp/keystone_endpoint_basic.sh"
                  :template "scripts/keystone_endpoint_basic.sh"
                  :values values
                  :owner "root"
                  :group "root"
-                 :mode "0755") 
-    (exec-script "sh /tmp/keystone_basic.sh") 
-    (exec-script "sh /tmp/keystone_endpoint_basic.sh") 
+                 :mode "0755")
+    (exec-script "sh /tmp/keystone_basic.sh")
+    (exec-script "sh /tmp/keystone_endpoint_basic.sh")
     (exec-script "keystone user-list")))
 
 (defplan export-creds [admin-pass external-ip]
@@ -52,7 +51,8 @@
                     admin-pass :admin-pass :as settings}]
   (api/server-spec
     :phases
-    {:install (install settings) 
+    {:install (api/plan-fn (package "keystone"))
      :configure (api/plan-fn
+                  (configure settings)
                   (export-creds admin-pass external-ip))}
     :extends [(core/server-spec settings)]))

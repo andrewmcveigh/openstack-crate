@@ -19,7 +19,6 @@ up ip link set $IFACE promisc on
 down ip link set $IFACE promisc off
 down ifconfig $IFACE down
         "]
-    (packages :apt ["openvswitch-switch" "openvswitch-datapath-dkms"])
     (exec-script "ovs-vsctl add-br br-int")
     (exec-script "ovs-vsctl add-br br-ext")
     (when (:br-ext flags)
@@ -33,12 +32,9 @@ down ifconfig $IFACE down
         (restart-network-interfaces :if-flag "restart-network"))
       (exec-script "ovs-vsctl add-port br-ex eth1"))))
 
-(defplan install [{{:keys [internal-ip external-ip]} :interfaces
-                   {:keys [user password] :as quantum} :quantum 
-                   :keys [mysql-root-pass]}]
-  (packages :apt ["quantum-server" "quantum-plugin-openvswitch"
-                  "quantum-plugin-openvswitch-agent" "dnsmasq"
-                  "quantum-dhcp-agent""quantum-l3-agent"])
+(defplan configure [{{:keys [internal-ip external-ip]} :interfaces
+                     {:keys [user password] :as quantum} :quantum
+                     :keys [mysql-root-pass]}]
   (mysql/create-user user password "root" mysql-root-pass)
   (mysql/create-database "quantum" user mysql-root-pass)
   (let [values (assoc quantum :internal-ip internal-ip)]
@@ -56,7 +52,14 @@ down ifconfig $IFACE down
 
 (defn server-spec [settings & flags]
   (api/server-spec
-    :phases {:install (api/plan-fn
-                        (apply open-vswitch settings flags)
-                        (install settings))}
+    :phases {:install
+             (api/plan-fn
+               (packages :apt ["openvswitch-switch"
+                               "openvswitch-datapath-dkms"])
+               (packages :apt ["quantum-server" "quantum-plugin-openvswitch"
+                               "quantum-plugin-openvswitch-agent" "dnsmasq"
+                               "quantum-dhcp-agent""quantum-l3-agent"]))
+             :configure (api/plan-fn
+                          (apply open-vswitch settings flags)
+                          (configure settings))}
     :extend [(core/server-spec settings)]))

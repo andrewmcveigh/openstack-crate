@@ -11,10 +11,10 @@
 
 (defn template-file [resource values & [flag]]
   (apply remote-file
-         (str \/ resource) 
+         (str \/ resource)
          `((if values
              ~@[:template resource :values values]
-             ~@[:local-file resource]) 
+             ~@[:local-file resource])
          (when flag ~@[:flag-on-changed flag]))))
 
 (defn restart-services [& [flag? flag & more :as services]]
@@ -24,7 +24,7 @@
     (doseq [svc services]
       (service svc :action :restart))))
 
-(defplan init-packages []
+(defplan bootstrap []
   (package-manager :update)
   (packages :apt ["ubuntu-cloud-keyring" "python-software-properties"
                   "software-properties-common" "python-keyring"])
@@ -55,11 +55,11 @@ netmask %3$s")
              (string/join " " dns-nameservers)))
       s)))
 
-(defn restart-network-interfaces [& {:keys [if-flag]}]
+(defplan restart-network-interfaces [& {:keys [if-flag]}]
   (plan-when (lib/flag? (keyword if-flag))
     (exec-checked-script "interfaces: up->down->up" "ifdown -a; ifup -a")))
 
-(defplan networking [interfaces]
+(defplan configure-networking [interfaces]
   (remote-file "/etc/network/interfaces"
                :template "etc/network/interfaces"
                :values {:interfaces
@@ -69,23 +69,25 @@ netmask %3$s")
 
 (defplan mysql-install [mysql-root-pass]
   (mysql/mysql-server mysql-root-pass)
-  (package "python-mysqldb")
+  (package "python-mysqldb"))
+
+(defplan mysql-configure []
   (remote-file "/etc/mysql/my.cnf"
                :local-file "etc/mysql/my.cnf"
                :flag-on-changed "restart-mysql")
-  (service "mysql"
-          :action :restart
-          :if-flag "restart-mysql"))
-
+  (service "mysql" :action :restart :if-flag "restart-mysql"))
 
 (defn server-spec [{:keys [interfaces mysql-root-pass] :as settings}]
   (api/server-spec
     :phases
-    {:install
+    {:bootstrap bootstrap
+     :install
      (api/plan-fn
-       (init-packages)
-       (networking interfaces)
        (mysql-install mysql-root-pass)
-       (packages :apt ["rabbitmq-server" "ntp" "vlan" "bridge-utils"])
+       (packages :apt ["rabbitmq-server" "ntp" "vlan" "bridge-utils"]))
+     :configure
+     (api/plan-fn
+       (configure-networking interfaces)
        (exec-script "sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf")
-       (exec-script "sysctl net.ipv4.ip_forward=1"))}))
+       (exec-script "sysctl net.ipv4.ip_forward=1")
+       (mysql-configure))}))

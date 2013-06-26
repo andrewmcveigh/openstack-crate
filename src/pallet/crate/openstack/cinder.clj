@@ -7,11 +7,9 @@
      :refer [restart-services template-file]]
     [pallet.crate.mysql :as mysql]))
 
-(defplan install [{{:keys [user password] :as cinder} :cinder
-                   {:keys [internal-ip external-ip]} :interfaces
-                   :keys [mysql-root-pass]}]
-  (packages :apt ["cinder-api" "cinder-scheduler" "cinder-volume" "iscsitarget"
-                  "open-iscsi" "iscsitarget-dkms"])
+(defplan configure [{{:keys [user password] :as cinder} :cinder
+                     {:keys [internal-ip external-ip]} :interfaces
+                     :keys [mysql-root-pass]}]
   (remote-file "/etc/default/iscsitarget"
                :content "ISCSITARGET_ENABLE=true"
                :flag-on-changed "restart-iscsi")
@@ -32,5 +30,9 @@
 
 (defn server-spec [settings]
   (api/server-spec
-    :phases {:install (api/plan-fn (install settings))}
+    :phases {:install (api/plan-fn
+                        (packages :apt ["cinder-api" "cinder-scheduler"
+                                        "cinder-volume" "iscsitarget"
+                                        "open-iscsi" "iscsitarget-dkms"]))
+             :configure (api/plan-fn (configure settings))}
     :extends [(core/server-spec settings)]))

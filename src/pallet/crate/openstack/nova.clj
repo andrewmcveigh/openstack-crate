@@ -4,12 +4,11 @@
      :refer [exec-script packages]]
     [pallet.api :as api]
     [pallet.crate :refer [defplan]]
-    [pallet.crate.openstack.core
+    [pallet.crate.openstack.core :as core
      :refer [restart-services template-file]]
     [pallet.crate.mysql :as mysql]))
 
-(defplan kvm []
-  (packages :apt ["kvm" "libvirt-bin" "pm-utils"])
+(defplan configure-kvm []
   (template-file "etc/libvirt/qemu.conf" nil "restart-kvm")
   (exec-script "virsh net-destroy default")
   (exec-script "virsh net-undefine default")
@@ -18,12 +17,9 @@
   (template-file "etc/default/libvirt-bin" nil "restart-kvm")
   (restart-services :flag "restart-kvm" "dbus" "libvirt-bin"))
 
-(defplan nova [{{:keys [user password] :as nova} :nova
-                {:keys [internal-ip]} :interfaces
-                :keys [mysql-root-pass]}]
-  (packages :apt ["nova-api" "nova-cert" "novnc" "nova-consoleauth"
-                  "nova-scheduler" "nova-novncproxy" "nova-doc"
-                  "nova-conductor" "nova-compute-kvm"])
+(defplan configure-nova [{{:keys [user password] :as nova} :nova
+                          {:keys [internal-ip]} :interfaces
+                          :keys [mysql-root-pass]}]
   (mysql/create-user user password "root" mysql-root-pass)
   (mysql/create-database "nova" user mysql-root-pass)
   (let [values (assoc nova :internal-ip internal-ip)]
@@ -38,5 +34,12 @@
 (defn server-spec [settings]
   (api/server-spec
     :phases {:install (api/plan-fn
-                        (kvm)
-                        (nova settings))}))
+                        (packages :apt ["kvm" "libvirt-bin" "pm-utils"])
+                        (packages :apt ["nova-api" "nova-cert" "novnc"
+                                        "nova-consoleauth" "nova-scheduler"
+                                        "nova-novncproxy" "nova-doc"
+                                        "nova-conductor" "nova-compute-kvm"]))
+             :configure (api/plan-fn
+                          (configure-kvm)
+                          (configure-nova settings))}
+    :extends [(core/server-spec settings)]))
