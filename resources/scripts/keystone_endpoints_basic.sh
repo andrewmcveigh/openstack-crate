@@ -15,10 +15,10 @@ HOST_IP=~{internal-ip}
 EXT_HOST_IP=~{external-ip}
 
 # MySQL definitions
-MYSQL_USER=~{keystone-user}
+MYSQL_USER=~{user}
 MYSQL_DATABASE=keystone
 MYSQL_HOST=$HOST_IP
-MYSQL_PASSWORD=~{keystone-password}
+MYSQL_PASSWORD=~{password}
 
 # Keystone definitions
 KEYSTONE_REGION=RegionOne

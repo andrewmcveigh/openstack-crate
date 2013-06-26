@@ -7,7 +7,6 @@
     [pallet.crate.openstack.glance :as glance]
     [pallet.crate.openstack.horizon :as horizon]
     [pallet.crate.openstack.keystone :as keystone]
-    [pallet.crate.openstack.open-vswitch :as open-vswitch]
     [pallet.crate.openstack.nova :as nova]
     [pallet.crate.openstack.quantum :as quantum]))
 
@@ -26,10 +25,8 @@
     (api/server-spec
       :extends [(core/server-spec settings)
                 (keystone/server-spec settings)
-                (horizon/server-spec settings)
-                (cinder/server-spec settings)
-                (nova/server-spec settings)
+                (glance/server-spec settings)
                 (quantum/server-spec settings)
-                ] 
-      ))
-  )
+                (nova/server-spec settings)
+                (cinder/server-spec settings)
+                (horizon/server-spec settings)])))

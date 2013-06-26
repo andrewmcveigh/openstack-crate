@@ -1,13 +1,11 @@
 (ns pallet.crate.openstack.nova
   (:require
     [pallet.actions
-     :refer [exec-checked-script exec-script package-manager package packages
-             plan-when remote-directory remote-file service]]
+     :refer [exec-script packages]]
     [pallet.api :as api]
     [pallet.crate :refer [defplan]]
     [pallet.crate.openstack.core
-     :refer [*mysql-root-pass* *internal-ip* *external-ip* *admin-pass*
-             restart-services template-file]]
+     :refer [restart-services template-file]]
     [pallet.crate.mysql :as mysql]))
 
 (defplan kvm []
@@ -20,13 +18,15 @@
   (template-file "etc/default/libvirt-bin" nil "restart-kvm")
   (restart-services :flag "restart-kvm" "dbus" "libvirt-bin"))
 
-(defplan nova [user password]
+(defplan nova [{{:keys [user password] :as nova} :nova
+                {:keys [internal-ip]} :interfaces
+                :keys [mysql-root-pass]}]
   (packages :apt ["nova-api" "nova-cert" "novnc" "nova-consoleauth"
                   "nova-scheduler" "nova-novncproxy" "nova-doc"
                   "nova-conductor" "nova-compute-kvm"])
-  (mysql/create-user user password "root" *mysql-root-pass*)
-  (mysql/create-database "nova" user *mysql-root-pass*)
-  (let [values {:user user :password password :internal-ip *internal-ip*}]
+  (mysql/create-user user password "root" mysql-root-pass)
+  (mysql/create-database "nova" user mysql-root-pass)
+  (let [values (assoc nova :internal-ip internal-ip)]
     (template-file "etc/nova/api-paste.ini" values "restart-nova")
     (template-file "etc/nova/nova.conf" values "restart-nova")
     (template-file "etc/nova/nova-compute.conf" nil "restart-nova"))
@@ -35,6 +35,8 @@
                     "nova-api" "nova-cert" "nova-compute" "nova-conductor"
                     "nova-consoleauth" "nova-novncproxy" "nova-scheduler"))
 
-(defn server-spec []
+(defn server-spec [settings]
   (api/server-spec
-    :phases {:install (api/plan-fn (kvm) (nova))}))
+    :phases {:install (api/plan-fn
+                        (kvm)
+                        (nova settings))}))

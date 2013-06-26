@@ -28,8 +28,10 @@
   (package-manager :update)
   (packages :apt ["ubuntu-cloud-keyring" "python-software-properties"
                   "software-properties-common" "python-keyring"])
-  (remote-file "/etc/apt/sources.list.d/openstack-grizzly.list"
-               :content "deb http://ubuntu-cloud.archive.canonical.com/ubuntu precise-updates/grizzly main")
+  (remote-file
+    "/etc/apt/sources.list.d/openstack-grizzly.list"
+    :content (str "deb http://ubuntu-cloud.archive.canonical.com/ubuntu"
+                  "precise-updates/grizzly main"))
   (package-manager :update)
   (package-manager :upgrade)
   (exec-script "apt-get dist-upgrade"))

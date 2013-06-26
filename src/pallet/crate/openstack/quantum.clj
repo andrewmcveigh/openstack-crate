@@ -1,10 +1,37 @@
 (ns pallet.crate.openstack.quantum
   (:require
-    [pallet.actions :refer [packages]]
+    [clojure.string :as string]
+    [pallet.actions :refer [exec-script packages remote-file]]
     [pallet.api :as api]
     [pallet.crate :refer [defplan]]
-    [pallet.crate.openstack.core :refer [restart-services template-file]]
+    [pallet.crate.openstack.core :as core
+     :refer [interface-str restart-network-interfaces restart-services template-file]]
     [pallet.crate.mysql :as mysql]))
+
+(defplan open-vswitch [{:keys [interfaces] :as settings} & flags]
+  (let [flags (set flags)
+        eth1 "
+# VM internet Access
+auto eth1
+iface eth1 inet manual
+up ifconfig $IFACE 0.0.0.0 up
+up ip link set $IFACE promisc on
+down ip link set $IFACE promisc off
+down ifconfig $IFACE down
+        "]
+    (packages :apt ["openvswitch-switch" "openvswitch-datapath-dkms"])
+    (exec-script "ovs-vsctl add-br br-int")
+    (exec-script "ovs-vsctl add-br br-ext")
+    (when (:br-ext flags)
+      (let [s (map interface-str
+                   (concat (remove (comp #{"eth1"} first) interfaces)
+                           (assoc-in (vec (filter (comp #{"eth1"} first)
+                                                  interfaces))
+                                     [0 0] "br-ext")))
+            values {:interfaces (str (string/join \newline s) eth1)}]
+        (template-file "etc/network/interfaces" values "restart-network")
+        (restart-network-interfaces :if-flag "restart-network"))
+      (exec-script "ovs-vsctl add-port br-ex eth1"))))
 
 (defplan install [{{:keys [internal-ip external-ip]} :interfaces
                    {:keys [user password] :as quantum} :quantum 
@@ -27,6 +54,9 @@
                       "quantum-plugin-openvswitch-agent" "quantum-server"
                       "dnsmasq")))
 
-(defn server-spec [settings]
+(defn server-spec [settings & flags]
   (api/server-spec
-    :phases {:install (install settings)}))
+    :phases {:install (api/plan-fn
+                        (apply open-vswitch settings flags)
+                        (install settings))}
+    :extend [(core/server-spec settings)]))

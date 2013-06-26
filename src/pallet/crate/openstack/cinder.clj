@@ -24,15 +24,7 @@
     (exec-script "cinder-manage db sync")
     (exec-script "dd if=/dev/zero of=cinder-volumes bs=1 count=0 seek=2G")
     (exec-script "losetup /dev/loop2 cinder-volumes")
-    (exec-script "echo \"n
-p
-1
-ENTER
-ENTER
-t
-8e
-w
-\" | fdisk /dev/loop2")
+    (exec-script "echo \"n\np\n1\n\n\nt\n8e\nw\n\" | fdisk /dev/loop2")
     (exec-script "pvcreate /dev/loop2")
     (exec-script "vgcreate cinder-volumes /dev/loop2"))
   (restart-services :flag "restart-cinder"

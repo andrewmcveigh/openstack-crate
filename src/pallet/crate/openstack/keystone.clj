@@ -2,40 +2,41 @@
   (:require
     [clojure.string :as string]
     [pallet.actions
-     :refer [exec-script package remote-file]]
+     :refer [exec-script package remote-file service]]
     [pallet.api :as api]
     [pallet.crate :refer [defplan]]
     [pallet.crate.mysql :as mysql]
-    [pallet.crate.openstack.core :as core
-     :refer [restart-network-interfaces template-file]]))
+    [pallet.crate.openstack.core :as core]))
 
-(defplan install [user password]
+(defplan install [{{:keys [internal-ip external-ip]} :interfaces
+                   {:keys [user password] :as keystone} :keystone
+                   :keys [mysql-root-pass]}]
   (package "keystone")
-  (mysql/create-user user password "root" *mysql-root-pass*)
-  (mysql/create-database "keystone" user *mysql-root-pass*)
+  (mysql/create-user user password "root" mysql-root-pass)
+  (mysql/create-database "keystone" user mysql-root-pass)
   (let [cmd "sed -i 's|^connection = .*$| connection = mysql://%s:%s@%s/keystone|g' /etc/keystone/keystone.conf"
-        cmd (format cmd user password *internal-ip*)]
-    (exec-script ~cmd))
-  (service "keystone" :action :restart)
-  (exec-script "keystone-manage db_sync")
-  (remote-file "/tmp/keystone_basic.sh"
-               :template "scripts/keystone_basic.sh"
-               :values {:internal-ip *internal-ip*}
-               :owner "root"
-               :group "root"
-               :mode "0755")
-  (remote-file "/tmp/keystone_endpoint_basic.sh"
-               :template "scripts/keystone_endpoint_basic.sh"
-               :values {:internal-ip *internal-ip*
-                        :external-ip *external-ip*
-                        :keystone-user user
-                        :keystone-password password}
-               :owner "root"
-               :group "root"
-               :mode "0755")
-  (exec-script "sh /tmp/keystone_basic.sh")
-  (exec-script "sh /tmp/keystone_endpoint_basic.sh")
-  (exec-script "keystone user-list"))
+        cmd (format cmd user password internal-ip)
+        values (assoc keystone
+                      :internal-ip internal-ip
+                      :external-ip external-ip)]
+    (exec-script ~cmd)
+    (service "keystone" :action :restart) 
+    (exec-script "keystone-manage db_sync") 
+    (remote-file "/tmp/keystone_basic.sh"
+                 :template "scripts/keystone_basic.sh"
+                 :values values
+                 :owner "root"
+                 :group "root"
+                 :mode "0755") 
+    (remote-file "/tmp/keystone_endpoint_basic.sh"
+                 :template "scripts/keystone_endpoint_basic.sh"
+                 :values values
+                 :owner "root"
+                 :group "root"
+                 :mode "0755") 
+    (exec-script "sh /tmp/keystone_basic.sh") 
+    (exec-script "sh /tmp/keystone_endpoint_basic.sh") 
+    (exec-script "keystone user-list")))
 
 (defplan export-creds [admin-pass external-ip]
   (let [export (format
@@ -47,13 +48,11 @@
                  external-ip)]
     (exec-script ~export)))
 
-(defn server-spec [{{:keys [user password]} :keystone
-                    {external-ip :external-ip} :interfaces
-                    admin-pass :admin-pass
-                    :as settings}]
+(defn server-spec [{{external-ip :external-ip} :interfaces
+                    admin-pass :admin-pass :as settings}]
   (api/server-spec
     :phases
-    {:install install
+    {:install (install settings) 
      :configure (api/plan-fn
                   (export-creds admin-pass external-ip))}
     :extends [(core/server-spec settings)]))
