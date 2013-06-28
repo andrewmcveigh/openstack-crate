@@ -36,7 +36,7 @@ down ifconfig $IFACE down
                      {:keys [user password] :as quantum} :quantum
                      :keys [mysql-root-pass]}]
   (mysql/create-user user password "root" mysql-root-pass)
-  (mysql/create-database "quantum" user mysql-root-pass)
+  (mysql/create-database "quantum" "root" mysql-root-pass)
   (let [values (assoc quantum :internal-ip internal-ip)]
     (template-file "etc/quantum/api-paste.ini" values "restart-quantum")
     (template-file "etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini"
@@ -54,12 +54,13 @@ down ifconfig $IFACE down
   (api/server-spec
     :phases {:install
              (api/plan-fn
-               (packages :apt ["openvswitch-switch"
-                               "openvswitch-datapath-dkms"])
-               (packages :apt ["quantum-server" "quantum-plugin-openvswitch"
-                               "quantum-plugin-openvswitch-agent" "dnsmasq"
-                               "quantum-dhcp-agent""quantum-l3-agent"]))
+               (packages :aptitude ["openvswitch-switch"
+                                    "openvswitch-datapath-dkms"])
+               (packages :aptitude
+                         ["quantum-server" "quantum-plugin-openvswitch"
+                          "quantum-plugin-openvswitch-agent" "dnsmasq"
+                          "quantum-dhcp-agent""quantum-l3-agent"]))
              :configure (api/plan-fn
                           (apply open-vswitch settings flags)
                           (configure settings))}
-    :extend [(core/server-spec settings)]))
+    :extends [(core/server-spec settings)]))

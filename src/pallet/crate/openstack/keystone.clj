@@ -12,8 +12,8 @@
                      {:keys [user password] :as keystone} :keystone
                      :keys [mysql-root-pass]}]
   (mysql/create-user user password "root" mysql-root-pass)
-  (mysql/create-database "keystone" user mysql-root-pass)
-  (let [cmd "sed -i 's|^connection = .*$| connection = mysql://%s:%s@%s/keystone|g' /etc/keystone/keystone.conf"
+  (mysql/create-database "keystone" "root" mysql-root-pass)
+  (let [cmd "sed -i 's|^connection = .*$|connection = mysql://%s:%s@%s/keystone|g' /etc/keystone/keystone.conf"
         cmd (format cmd user password internal-ip)
         values (assoc keystone
                       :internal-ip internal-ip

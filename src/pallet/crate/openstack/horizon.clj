@@ -9,7 +9,7 @@
   (api/server-spec
     :phases
     {:install (api/plan-fn
-                (packages :apt ["openstack-dashboard" "memcached"])
+                (packages :aptitude ["openstack-dashboard" "memcached"])
                 (exec-script "dpkg --purge openstack-dashboard-ubuntu-theme")
                 (restart-services "apache2" "memcached"))}
-    :extend [(core/server-spec settings)]))
+    :extends [(core/server-spec settings)]))

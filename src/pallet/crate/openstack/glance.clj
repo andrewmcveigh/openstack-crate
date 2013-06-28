@@ -11,7 +11,7 @@
                     internal-ip mysql-root-pass]
   (let [values (assoc credentials :internal-ip internal-ip)]
     (mysql/create-user user password "root" mysql-root-pass)
-    (mysql/create-database "glance" user mysql-root-pass)
+    (mysql/create-database "glance" "root" mysql-root-pass)
     (template-file "etc/glance/glance-api-paste.ini" values "restart-glance")
     (template-file
       "etc/glance/glance-registry-paste.ini" values "restart-glance")
