@@ -11,8 +11,8 @@
 #
 
 # Host address
-HOST_IP=~{internal-ip}
-EXT_HOST_IP=~{external-ip}
+HOST_IP=~(pallet.crate.openstack.core/private-ip)
+EXT_HOST_IP=~(pallet.crate.openstack.core/primary-ip)
 
 # MySQL definitions
 MYSQL_USER=~{user}

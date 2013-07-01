@@ -7,23 +7,19 @@
      :refer [restart-services template-file]]
     [pallet.crate.mysql :as mysql]))
 
-(defplan configure [{:keys [user password] :as credentials}
-                    internal-ip mysql-root-pass]
-  (let [values (assoc credentials :internal-ip internal-ip)]
-    (mysql/create-user user password "root" mysql-root-pass)
-    (mysql/create-database "glance" "root" mysql-root-pass)
-    (template-file "etc/glance/glance-api-paste.ini" values "restart-glance")
-    (template-file
-      "etc/glance/glance-registry-paste.ini" values "restart-glance")
-    (template-file "etc/glance/glance-api.conf" values "restart-glance")
-    (template-file "etc/glance/glance-registry.conf" values "restart-glance")
-    (restart-services :flag "restart-glance" "glance-api" "glance-registry")))
+(defplan configure [{:keys [user password] :as credentials} mysql-root-pass]
+  (mysql/create-user user password "root" mysql-root-pass)
+  (mysql/create-database "glance" "root" mysql-root-pass)
+  (template-file "etc/glance/glance-api-paste.ini" credentials "restart-glance")
+  (template-file
+    "etc/glance/glance-registry-paste.ini" credentials "restart-glance")
+  (template-file "etc/glance/glance-api.conf" credentials "restart-glance")
+  (template-file "etc/glance/glance-registry.conf" credentials "restart-glance")
+  (restart-services :flag "restart-glance" "glance-api" "glance-registry"))
 
-(defn server-spec [{:keys [glance mysql-root-pass]
-                    {internal-ip :internal-ip} :interfaces
-                    :as settings}]
+(defn server-spec [{:keys [glance mysql-root-pass] :as settings}]
   (api/server-spec
     :phases
     {:install (api/plan-fn (package "glance"))
-     :configure (api/plan-fn (configure glance internal-ip mysql-root-pass))}
+     :configure (api/plan-fn (configure glance mysql-root-pass))}
     :extends [(core/server-spec settings)]))

@@ -19,14 +19,12 @@
 
 (defplan configure-nova [{{:keys [user password] :as nova} :nova
                           {:keys [quantum-user quantum-password]} :quantum
-                          {:keys [internal-ip]} :interfaces
                           :keys [mysql-root-pass]}]
   (mysql/create-user user password "root" mysql-root-pass)
   (mysql/create-database "nova" "root" mysql-root-pass)
   (let [values (assoc nova
                       :quantum-user quantum-user
-                      :quantum-password quantum-password
-                      :internal-ip internal-ip)]
+                      :quantum-password quantum-password)]
     (template-file "etc/nova/api-paste.ini" values "restart-nova")
     (template-file "etc/nova/nova.conf" values "restart-nova")
     (template-file "etc/nova/nova-compute.conf" nil "restart-nova"))

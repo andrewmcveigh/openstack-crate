@@ -4,19 +4,21 @@
     [clojure.string :as string]
     [pallet.actions
      :refer [exec-checked-script exec-script package package-manager packages
-             plan-when remote-file service]]
+             plan-when remote-file remote-file-content service
+             with-action-values]]
     [pallet.api :as api]
-    [pallet.crate :refer [defplan target]]
+    [pallet.argument :refer [delayed]]
+    [pallet.crate :as crate :refer [defplan]]
     [pallet.crate.automated-admin-user :refer [automated-admin-user]]
     [pallet.crate.mysql :as mysql]
     [pallet.node :as node]
     [pallet.script.lib :as lib]))
 
 (defn private-ip []
-  (node/private-ip (target)))
+  (node/private-ip (crate/target-node)))
 
 (defn primary-ip []
-  (node/primary-ip (target)))
+  (node/primary-ip (crate/target-node)))
 
 (defn local-file [path & substitutions]
   (let [filename (apply format path substitutions)
@@ -43,18 +45,18 @@
 
 (defplan debconf-grub []
   (package-manager
-    :debconf 
+    :debconf
     "grub-pc grub-pc/kopt_extracted boolean false"
     "grub-pc grub2/kfreebsd_cmdline string"
     "grub-pc grub2/device_map_regenerated note"
-    "grub-pc grub-pc/install_devices multiselect /dev/sda " 
+    "grub-pc grub-pc/install_devices multiselect /dev/sda "
     "grub-pc grub-pc/postrm_purge_boot_grub boolean false"
     "grub-pc grub-pc/install_devices_failed_upgrade boolean true"
     "grub-pc grub2/linux_cmdline string"
     "grub-pc grub-pc/install_devices_empty boolean false"
     "grub-pc grub2/kfreebsd_cmdline_default string quiet"
     "grub-pc grub-pc/install_devices_failed boolean false"
-    "grub-pc grub-pc/install_devices_disks_changed multiselect /dev/sda " 
+    "grub-pc grub-pc/install_devices_disks_changed multiselect /dev/sda "
     "grub-pc grub2/linux_cmdline_default string"
     "grub-pc grub-pc/chainload_from_menu.lst boolean true"
     "grub-pc grub-pc/hidden_timeout boolean false"
@@ -106,12 +108,114 @@ netmask %3$s")
       (exec-checked-script "interfaces: up->down->up"
                            (format "ifdown %1$s; ifup %1$s" iface)))))
 
+;; by Chouser: from clojure.contrib.map-utils
+(defn deep-merge-with
+  "Like merge-with, but merges maps recursively, applying the given fn
+only when there's a non-map at a particular level.
+
+(deepmerge + {:a {:b {:c 1 :d {:x 1 :y 2}} :e 3} :f 4}
+{:a {:b {:c 2 :d {:z 9} :z 3} :e 100}})
+-> {:a {:b {:z 3, :c 3, :d {:z 9, :x 1, :y 2}}, :e 103}, :f 4}"
+  [f & maps]
+  (apply
+    (fn m [& maps]
+      (if (every? map? maps)
+        (apply merge-with m maps)
+        (apply f maps)))
+    maps))
+
+(def iface-sorted-map
+  (sorted-map-by (fn [a b]
+                   (let [m {:iface 0
+                            :address 1
+                            :netmask 2
+                            :gateway 3
+                            :broadcast 4
+                            :up 5
+                            :down 6
+                            :pre-up 99}]
+                     (< (m a 50) (m b 51))))))
+
+(def iface-order-map
+  (sorted-map-by (fn [a b]
+                   (letfn [(order [x]
+                             (cond (.startsWith x "lo") 0
+                                   (.startsWith x "eth")
+                                   (+ 1 (Integer. (string/replace x #"eth" "")))
+                                   (.startsWith x "en")
+                                   (+ 1 (Integer. (string/replace x #"en" "")))
+                                   :default 99))]
+                     (< (order a) (order b))))))
+
+(defn parse-network-str [str-content]
+  (let [lines (remove #(re-seq #"(?:^#)|(?:^\s*$)" %)
+                      (string/split str-content #"\n"))
+        ifaces (partition-all 2 (partition-by #(.startsWith % "auto") lines))]
+    (into iface-order-map
+          (map (fn [[[auto] iface]]
+                 (let [label (string/replace auto #"^auto\s+" "")
+                       iface (into iface-sorted-map
+                                   (map (fn [setting]
+                                          (let [[k & settings]
+                                                (string/split
+                                                  (string/trim setting) #"\s")]
+                                            [(keyword k)
+                                             (string/join " " settings)]))
+                                        iface))
+                       [k value] (first iface)
+                       value (string/join " "(rest (string/split value #"\s")))]
+                   {label (assoc iface k value)}))
+               ifaces))))
+
+(defn merge-network-interfaces [m str-content]
+  (deep-merge-with
+    (fn [_ b] b)
+    (parse-network-str str-content)
+    m))
+
+(defn str-settings-line [iface [k setting]]
+  (let [setting (if (sequential? setting) setting [setting])]
+    (string/join \newline
+                 (map (fn [s]
+                        (if (= k :iface)
+                          (format "  %s %s %s" (name k) iface s)
+                          (format "  %s %s" (name k) s)))
+                      setting))))
+
+(defn network-map->str [m]
+  (string/join
+    "\n\n"
+    (map (fn [[iface spec]]
+           (format "auto %s\n%s"
+                   iface
+                   (string/join \newline
+                                (map (partial iface str-settings-line) spec))))
+         m)))
+
+(defplan remote-manage-network-interfaces
+  "Manage the /etc/network/interfaces file, optionally keeping/modifying the
+  existing content of the file.
+
+  Args:
+  - partial-fn: a function that when passed the string content of the file,
+                returns a modified (or not, as the case may be) version."
+  [partial-fn]
+  (when partial-fn
+    (let [interfaces (remote-file-content "/etc/network/interfaces")
+          interfaces (with-action-values [interfaces] (partial-fn interfaces))]
+      (remote-file "/etc/network/interfaces"
+                   :content (delayed [_] @interfaces)
+                   :overwrite-changes true
+                   :flag-on-changed "restart-network"))))
+
 (defplan configure-networking [interfaces]
-  (remote-file "/etc/network/interfaces"
-               :template "etc/network/interfaces"
-               :values {:interfaces
-                        (string/join \newline (map interface-str interfaces))}
-               :flag-on-changed "restart-network")
+  ;(remote-file "/etc/network/interfaces"
+               ;:template "etc/network/interfaces"
+               ;:values {:interfaces
+                        ;(string/join \newline (map interface-str interfaces))}
+               ;:flag-on-changed "restart-network")
+  (remote-manage-network-interfaces
+    #(network-map->str (merge-network-interfaces interfaces %)))
   (restart-network-interfaces (filterv string? (map first interfaces))
                               :if-flag "restart-network"))
 
@@ -130,7 +234,7 @@ netmask %3$s")
     :phases
     {:bootstrap (api/plan-fn
                   (bootstrap)
-                  (automated-admin-user))  
+                  (automated-admin-user))
      :install
      (api/plan-fn
        (package-manager :update)
@@ -138,7 +242,9 @@ netmask %3$s")
        (packages :aptitude ["rabbitmq-server" "ntp" "vlan" "bridge-utils"]))
      :configure
      (api/plan-fn
-       (configure-networking interfaces)
-       (exec-script "sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf")
+       (when interfaces (configure-networking interfaces))
+       (exec-script (str "sed -i "
+                         "'s/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' "
+                         "/etc/sysctl.conf"))
        (exec-script "sysctl net.ipv4.ip_forward=1")
        (mysql-configure))}))
