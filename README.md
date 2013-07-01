@@ -1,5 +1,7 @@
 Install and configure openstack.
 
+*This project is in an "almost working" condition.*
+
 ### Dependency Information
 
 ```clj
