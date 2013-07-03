@@ -64,8 +64,6 @@
     "grub-pc grub-pc/timeout string 2"))
 
 (defplan bootstrap []
-  ;(exec-script "export DEBIAN_FRONTEND=noninteractive")
-  ;(package-manager :update)
   (packages :aptitude ["ubuntu-cloud-keyring" "python-software-properties"
                        "software-properties-common" "python-keyring"])
   (remote-file "/etc/apt/sources.list"
@@ -153,18 +151,20 @@ only when there's a non-map at a particular level.
         ifaces (partition-all 2 (partition-by #(.startsWith % "auto") lines))]
     (into iface-order-map
           (map (fn [[[auto] iface]]
-                 (let [label (string/replace auto #"^auto\s+" "")
-                       iface (into iface-sorted-map
-                                   (map (fn [setting]
-                                          (let [[k & settings]
-                                                (string/split
-                                                  (string/trim setting) #"\s")]
-                                            [(keyword k)
-                                             (string/join " " settings)]))
-                                        iface))
-                       [k value] (first iface)
-                       value (string/join " "(rest (string/split value #"\s")))]
-                   {label (assoc iface k value)}))
+                 (when iface
+                   (let [label (string/replace auto #"^auto\s+" "")
+                         iface (into iface-sorted-map
+                                     (reduce (partial merge-with vector)
+                                             (map (fn [setting]
+                                                    (let [[k & settings]
+                                                          (string/split
+                                                            (string/trim setting) #"\s")]
+                                                      {(keyword k)
+                                                       (string/join " " settings)}))
+                                                  iface)))
+                         [k value] (first iface)
+                         value (string/join " "(rest (string/split value #"\s")))]
+                     {label (assoc iface k value)})))
                ifaces))))
 
 (defn merge-network-interfaces [m str-content]
@@ -189,8 +189,22 @@ only when there's a non-map at a particular level.
            (format "auto %s\n%s"
                    iface
                    (string/join \newline
-                                (map (partial iface str-settings-line) spec))))
+                                (map (partial str-settings-line iface) spec))))
          m)))
+
+;(prn (= {"eth1" (into iface-sorted-map
+      ;{:iface "inet manual"
+       ;:up ["ifconfig $IFACE 0.0.0.0 up"
+            ;"ip link set $IFACE promisc on"]
+       ;:down ["ip link set $IFACE promisc off"
+              ;"ifconfig $IFACE 0.0.0.0 down"]})}
+
+;(parse-network-str "auto eth1
+  ;iface eth1 inet manual
+  ;up ifconfig $IFACE 0.0.0.0 up
+  ;up ip link set $IFACE promisc on
+  ;down ip link set $IFACE promisc off
+  ;down ifconfig $IFACE 0.0.0.0 down")))
 
 (defplan remote-manage-network-interfaces
   "Manage the /etc/network/interfaces file, optionally keeping/modifying the
@@ -205,6 +219,7 @@ only when there's a non-map at a particular level.
           interfaces (with-action-values [interfaces] (partial-fn interfaces))]
       (remote-file "/etc/network/interfaces"
                    :content (delayed [_] @interfaces)
+                   :literal true
                    :overwrite-changes true
                    :flag-on-changed "restart-network"))))
 

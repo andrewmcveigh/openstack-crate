@@ -12,6 +12,7 @@
                      :keys [mysql-root-pass]}]
   (mysql/create-user user password "root" mysql-root-pass)
   (mysql/create-database "keystone" "root" mysql-root-pass)
+  (mysql/grant "ALL" "keystone.*" "'keystone'@'%'" "root" mysql-root-pass)
   (let [cmd "sed -i 's|^connection = .*$|connection = mysql://%s:%s@%s/keystone|g' /etc/keystone/keystone.conf"
         cmd (format cmd user password (core/private-ip))]
     (exec-script ~cmd)
@@ -48,6 +49,7 @@
     :phases
     {:install (api/plan-fn (package "keystone"))
      :configure (api/plan-fn
+                  (prn 'tetetetete (pallet.crate/target-node))
                   (configure settings)
                   (export-creds admin-pass))}
     :extends [(core/server-spec settings)]))
