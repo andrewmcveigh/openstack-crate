@@ -10,8 +10,7 @@
 
 (defplan configure-kvm []
   (template-file "etc/libvirt/qemu.conf" nil "restart-kvm")
-  (exec-script "virsh net-destroy default")
-  (exec-script "virsh net-undefine default")
+  (exec-script "if virsh net-list | grep default ; then virsh net-destroy default; virsh net-undefine default; fi")
   (template-file "etc/libvirt/libvirtd.conf" nil "restart-kvm")
   (template-file "etc/init/libvirt-bin.conf" nil "restart-kvm")
   (template-file "etc/default/libvirt-bin" nil "restart-kvm")
@@ -22,6 +21,7 @@
                           :keys [mysql-root-pass]}]
   (mysql/create-user user password "root" mysql-root-pass)
   (mysql/create-database "nova" "root" mysql-root-pass)
+  (mysql/grant "ALL" "nova.*" "'nova'@'%'" "root" mysql-root-pass)
   (let [values (assoc nova
                       :quantum-user quantum-user
                       :quantum-password quantum-password)]
