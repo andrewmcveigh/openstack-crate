@@ -49,7 +49,6 @@
     :phases
     {:install (api/plan-fn (package "keystone"))
      :configure (api/plan-fn
-                  (prn 'tetetetete (pallet.crate/target-node))
                   (configure settings)
                   (export-creds admin-pass))}
     :extends [(core/server-spec settings)]))
