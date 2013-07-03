@@ -15,10 +15,10 @@ HOST_IP=~(pallet.crate.openstack.core/private-ip)
 EXT_HOST_IP=~(pallet.crate.openstack.core/primary-ip)
 
 # MySQL definitions
-MYSQL_USER=~{user}
+MYSQL_USER=~(:user keystone)
 MYSQL_DATABASE=keystone
 MYSQL_HOST=$HOST_IP
-MYSQL_PASSWORD=~{password}
+MYSQL_PASSWORD=~(:password keystone)
 
 # Keystone definitions
 KEYSTONE_REGION=RegionOne

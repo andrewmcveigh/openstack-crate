@@ -22,7 +22,7 @@
     ~(str "<<EOF\n" (string/replace sql-script "`" "\\`") "\nEOF\n}"))))
 
 (def ^{:private true} sql-create-user
-  "GRANT USAGE ON *.* TO '%1$s'@'%' IDENTIFIED BY '%2$s'")
+  "GRANT USAGE ON *.* TO '%1$s'@'%%' IDENTIFIED BY '%2$s'")
 
 (defn log [& stuff]
   (doseq [s stuff]

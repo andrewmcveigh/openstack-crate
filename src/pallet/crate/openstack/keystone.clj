@@ -8,11 +8,26 @@
     [pallet.crate.mysql :as mysql]
     [pallet.crate.openstack.core :as core]))
 
+(defn export-creds-str [admin-pass ip]
+  (format
+    "export OS_TENANT_NAME=admin
+    export OS_USERNAME=admin
+    export OS_PASSWORD=%s
+    export OS_AUTH_URL=\"http://%s:5000/v2.0/\""
+    admin-pass
+    ip))
+
+(defn exec-script-with-export [export-str script]
+  (let [cmd (format "%s; %s" export-str script)]
+    (exec-script ~cmd)))
+
 (defplan configure [{{:keys [user password] :as keystone} :keystone
-                     :keys [mysql-root-pass]}]
+                     :keys [admin-pass mysql-root-pass]
+                     :as settings}]
   (mysql/create-user user password "root" mysql-root-pass)
   (mysql/create-database "keystone" "root" mysql-root-pass)
   (mysql/grant "ALL" "keystone.*" "'keystone'@'%'" "root" mysql-root-pass)
+  (service "mysql" :action :restart)
   (let [cmd "sed -i 's|^connection = .*$|connection = mysql://%s:%s@%s/keystone|g' /etc/keystone/keystone.conf"
         cmd (format cmd user password (core/private-ip))]
     (exec-script ~cmd)
@@ -20,19 +35,22 @@
     (exec-script "keystone-manage db_sync")
     (remote-file "/tmp/keystone_basic.sh"
                  :template "scripts/keystone_basic.sh"
-                 :values keystone
+                 :values settings
+                 :literal true
                  :owner "root"
                  :group "root"
                  :mode "0755")
     (remote-file "/tmp/keystone_endpoint_basic.sh"
-                 :template "scripts/keystone_endpoint_basic.sh"
-                 :values keystone
+                 :template "scripts/keystone_endpoints_basic.sh"
+                 :values settings
+                 :literal true
                  :owner "root"
                  :group "root"
                  :mode "0755")
-    (exec-script "sh /tmp/keystone_basic.sh")
-    (exec-script "sh /tmp/keystone_endpoint_basic.sh")
-    (exec-script "keystone user-list")))
+    (exec-script-with-export (export-creds-str admin-pass (core/primary-ip))
+                             "sh /tmp/keystone_basic.sh")
+    (exec-script-with-export (export-creds-str admin-pass (core/primary-ip))
+                             "sh /tmp/keystone_endpoint_basic.sh")))
 
 (defplan export-creds [admin-pass]
   (let [export (format
@@ -49,6 +67,5 @@
     :phases
     {:install (api/plan-fn (package "keystone"))
      :configure (api/plan-fn
-                  (configure settings)
-                  (export-creds admin-pass))}
+                  (configure settings))}
     :extends [(core/server-spec settings)]))
