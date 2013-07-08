@@ -20,7 +20,6 @@
 
 (defplan open-vswitch [{{:strs [eth1] :as interfaces} :settings} & flags]
   (let [flags (set flags)
-        ;br-ext eth1
         bridge (into core/iface-sorted-map
                      {:iface "inet manual"
                       :up ["ifconfig $IFACE 0.0.0.0 up"
@@ -29,30 +28,33 @@
                              "ifconfig $IFACE 0.0.0.0 down"]})]
     (service "openvswitch-switch" :action :start)
     (add-bridge "br-int")
-    (add-bridge "br-ext")
-    (when (:br-ext flags)
+    (add-bridge "br-ex")
+    (when (:br-ex flags)
       (core/remote-manage-network-interfaces
         #(core/network-map->str
-           (let [{:strs [eth1 br-ext] :as parsed} (core/parse-network-str %)
-                 br-ext (if (= eth1 bridge) br-ext eth1)]
+           (let [{:strs [eth1 br-ex] :as parsed} (core/parse-network-str %)
+                 br-ex (if (= eth1 bridge) br-ex eth1)]
              (assoc parsed
                     "eth1" bridge
-                    "br-ext" br-ext))))
+                    "br-ex" br-ex))))
       (restart-network-interfaces (conj (filterv string? (map first interfaces))
-                                        "br-ext")
+                                        "br-ex")
                                   :if-flag "restart-network")
-      (add-port "br-ext" "eth1"))))
+      (add-port "br-ex" "eth1"))))
 
-(defplan configure [{{:keys [user password] :as quantum} :quantum
+(defplan configure [{{:keys [user password]} :quantum
+                     :as settings
                      :keys [mysql-root-pass]}]
   (mysql/create-user user password "root" mysql-root-pass)
   (mysql/create-database "quantum" "root" mysql-root-pass)
-  (template-file "etc/quantum/api-paste.ini" quantum "restart-quantum")
+  (mysql/grant "ALL" "quantum.*" (format "'%s'@'%%'" user) "root" mysql-root-pass)
+  (template-file "etc/quantum/api-paste.ini" settings "restart-quantum")
   (template-file "etc/quantum/plugins/openvswitch/ovs_quantum_plugin.ini"
-                 quantum
+                 settings
                  "restart-quantum")
-  (template-file "etc/quantum/metadata_agent.ini" quantum "restart-quantum")
-  (template-file "etc/quantum/quantum.conf" quantum "restart-quantum")
+  (template-file "etc/quantum/metadata_agent.ini" settings "restart-quantum")
+  (template-file "etc/quantum/quantum.conf" settings "restart-quantum")
+  (template-file "etc/quantum/l3_agent.ini" nil "restart-quantum")
   (restart-services :flag "restart-quantum"
                     "quantum-dhcp-agent" "quantum-l3-agent"
                     "quantum-metadata-agent"

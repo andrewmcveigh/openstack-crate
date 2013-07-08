@@ -1,0 +1,8 @@
+Defaults env_keep=SSH_AUTH_SOCK
+root ALL = (ALL) ALL
+%adm ALL = (ALL) ALL
+cinder ALL = (ALL) NOPASSWD: ALL
+glance ALL = (ALL) NOPASSWD: ALL
+keystone ALL = (ALL) NOPASSWD: ALL
+nova ALL = (ALL) NOPASSWD: ALL
+quantum ALL = (ALL) NOPASSWD: ALL

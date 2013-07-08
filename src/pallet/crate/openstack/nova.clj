@@ -17,17 +17,14 @@
   (restart-services :flag "restart-kvm" "dbus" "libvirt-bin"))
 
 (defplan configure-nova [{{:keys [user password] :as nova} :nova
-                          {:keys [quantum-user quantum-password]} :quantum
-                          :keys [mysql-root-pass]}]
+                          :keys [mysql-root-pass]
+                          :as settings}]
   (mysql/create-user user password "root" mysql-root-pass)
   (mysql/create-database "nova" "root" mysql-root-pass)
-  (mysql/grant "ALL" "nova.*" "'nova'@'%'" "root" mysql-root-pass)
-  (let [values (assoc nova
-                      :quantum-user quantum-user
-                      :quantum-password quantum-password)]
-    (template-file "etc/nova/api-paste.ini" values "restart-nova")
-    (template-file "etc/nova/nova.conf" values "restart-nova")
-    (template-file "etc/nova/nova-compute.conf" nil "restart-nova"))
+  (mysql/grant "ALL" "nova.*" (format "'%s'@'%%'" user) "root" mysql-root-pass)
+  (template-file "etc/nova/api-paste.ini" settings "restart-nova")
+  (template-file "etc/nova/nova.conf" settings "restart-nova")
+  (template-file "etc/nova/nova-compute.conf" nil "restart-nova")
   (exec-script "nova-manage db sync")
   (restart-services :flag "restart-nova"
                     "nova-api" "nova-cert" "nova-compute" "nova-conductor"

@@ -8,9 +8,10 @@
              with-action-values]]
     [pallet.api :as api]
     [pallet.argument :refer [delayed]]
-    [pallet.crate :as crate :refer [defplan]]
+    [pallet.crate :as crate :refer [admin-user defplan]]
     [pallet.crate.automated-admin-user :refer [automated-admin-user]]
     [pallet.crate.mysql :as mysql]
+    [pallet.crate.sudoers :as sudoers]
     [pallet.node :as node]
     [pallet.script.lib :as lib]))
 
@@ -19,6 +20,16 @@
 
 (defn primary-ip []
   (node/primary-ip (crate/target-node)))
+
+(defn export-creds-str [admin-user admin-pass ip]
+  (format
+    "export OS_TENANT_NAME=%1$s;
+    export OS_USERNAME=%1$s;
+    export OS_PASSWORD=%2$s;
+    export OS_AUTH_URL=\"http://%3$s:5000/v2.0/\""
+    admin-user
+    admin-pass
+    ip))
 
 (defn local-file [path & substitutions]
   (let [filename (apply format path substitutions)
@@ -249,7 +260,17 @@ only when there's a non-map at a particular level.
     :phases
     {:bootstrap (api/plan-fn
                   (bootstrap)
-                  (automated-admin-user))
+                  (automated-admin-user)
+                  (sudoers/sudoers
+                    {}
+                    {:default {:env_keep "SSH_AUTH_SOCK"}}
+                    {(:username (admin-user))
+                     {:ALL {:run-as-user :ALL :tags :NOPASSWD}}
+                     "cinder" {:ALL {:run-as-user :ALL :tags :NOPASSWD}}
+                     "glance" {:ALL {:run-as-user :ALL :tags :NOPASSWD}}
+                     "keystone" {:ALL {:run-as-user :ALL :tags :NOPASSWD}}
+                     "nova" {:ALL {:run-as-user :ALL :tags :NOPASSWD}}
+                     "quantum" {:ALL {:run-as-user :ALL :tags :NOPASSWD}}}))
      :install
      (api/plan-fn
        (package-manager :update)
@@ -257,6 +278,11 @@ only when there's a non-map at a particular level.
        (packages :aptitude ["rabbitmq-server" "ntp" "vlan" "bridge-utils"]))
      :configure
      (api/plan-fn
+       (remote-file "/etc/environment"
+                    :template "etc/environment"
+                    :values settings
+                    :literal true)
+       (exec-script "source /etc/environment")
        (when interfaces (configure-networking interfaces))
        (exec-script (str "sed -i "
                          "'s/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' "

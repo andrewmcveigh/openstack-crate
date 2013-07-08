@@ -1,0 +1,12 @@
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games"
+OS_TENANT_NAME=~{admin-user}
+OS_USERNAME=~{admin-user}
+OS_PASSWORD=~{service-pass}
+OS_AUTH_URL="http://~(pallet.crate.openstack.core/primary-ip):5000/v2.0/"
+KEYSTONE_REGION=RegionOne
+SERVICE_TOKEN=ADMIN
+SERVICE_ENDPOINT="http://~(pallet.crate.openstack.core/private-ip):35357/v2.0"
+SERVICE_TENANT_NAME=~{service-user}
+SERVICE_PASSWORD=~{service-pass}
+OS_SERVICE_TOKEN=ADMIN
+OS_SERVICE_ENDPOINT="http://~(pallet.crate.openstack.core/private-ip):35357/v2.0"

@@ -8,16 +8,17 @@
     [pallet.crate.mysql :as mysql]))
 
 (defplan configure [{{:keys [user password] :as cinder} :cinder
-                     :keys [mysql-root-pass]}]
+                     :keys [mysql-root-pass]
+                     :as settings}]
   (remote-file "/etc/default/iscsitarget"
                :content "ISCSITARGET_ENABLE=true"
                :flag-on-changed "restart-iscsi")
   (restart-services :flag "restart-iscsi" "iscsitarget" "open-iscsi")
   (mysql/create-user user password "root" mysql-root-pass)
   (mysql/create-database "cinder" "root" mysql-root-pass)
-  (mysql/grant "ALL" "cinder.*" "'cinder'@'%'" "root" mysql-root-pass)
-  (template-file "etc/cinder/api-paste.ini" cinder "restart-cinder")
-  (template-file "etc/cinder/cinder.conf" cinder "restart-cinder")
+  (mysql/grant "ALL" "cinder.*" (format "'%s'@'%%'" user) "root" mysql-root-pass)
+  (template-file "etc/cinder/api-paste.ini" settings "restart-cinder")
+  (template-file "etc/cinder/cinder.conf" settings "restart-cinder")
   (exec-script "cinder-manage db sync")
   (exec-script
 "if ! fdisk -l /dev/loop2 | grep '/dev/loop2p1'; then
