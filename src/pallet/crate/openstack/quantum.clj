@@ -54,7 +54,7 @@
                  "restart-quantum")
   (template-file "etc/quantum/metadata_agent.ini" settings "restart-quantum")
   (template-file "etc/quantum/quantum.conf" settings "restart-quantum")
-  (template-file "etc/quantum/l3_agent.ini" nil "restart-quantum")
+  (template-file "etc/quantum/l3_agent.ini" settings "restart-quantum")
   (restart-services :flag "restart-quantum"
                     "quantum-dhcp-agent" "quantum-l3-agent"
                     "quantum-metadata-agent"
