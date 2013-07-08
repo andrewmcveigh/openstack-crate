@@ -1,6 +1,6 @@
 Install and configure openstack.
 
-*This project is in an "almost working" condition.*
+*This project is in an "works for me" condition.*
 
 ### Dependency Information
 
