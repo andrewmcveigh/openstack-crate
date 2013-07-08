@@ -255,12 +255,12 @@ only when there's a non-map at a particular level.
                :flag-on-changed "restart-mysql")
   (service "mysql" :action :restart :if-flag "restart-mysql"))
 
-(defn server-spec [{:keys [interfaces mysql-root-pass] :as settings}]
+(defn server-spec [{:keys [automated-admin? interfaces mysql-root-pass] :as settings}]
   (api/server-spec
     :phases
     {:bootstrap (api/plan-fn
                   (bootstrap)
-                  (automated-admin-user)
+                  (when automated-admin? (automated-admin-user))
                   (sudoers/sudoers
                     {}
                     {:default {:env_keep "SSH_AUTH_SOCK"}}
