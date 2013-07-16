@@ -15,32 +15,43 @@
 
 (defplan add-port [bridge port]
   (exec-script
-    ~(format "if ! ovs-vsctl list-ports %1$s | grep %2$s; then ovs-vsctl add-port %1$s %2$s; fi"
+    ~(format "if ! ovs-vsctl list-ports %1$s | grep %2$s;
+             then ovs-vsctl add-port %1$s %2$s;
+             ifdown -a;
+             ifup -a;
+             fi"
             bridge port)))
 
-(defplan open-vswitch [{{:strs [eth1] :as interfaces} :settings} & flags]
-  (let [flags (set flags)
-        bridge (into core/iface-sorted-map
-                     {:iface "inet manual"
-                      :up ["ifconfig $IFACE 0.0.0.0 up"
-                           "ip link set $IFACE promisc on"]
-                      :down ["ip link set $IFACE promisc off"
-                             "ifconfig $IFACE 0.0.0.0 down"]})]
-    (service "openvswitch-switch" :action :start)
-    (add-bridge "br-int")
-    (add-bridge "br-ex")
-    (when (:br-ex flags)
-      (core/remote-manage-network-interfaces
-        #(core/network-map->str
-           (let [{:strs [eth1 br-ex] :as parsed} (core/parse-network-str %)
-                 br-ex (if (= eth1 bridge) br-ex eth1)]
-             (assoc parsed
-                    "eth1" bridge
-                    "br-ex" br-ex))))
-      (restart-network-interfaces (conj (filterv string? (map first interfaces))
-                                        "br-ex")
-                                  :if-flag "restart-network")
-      (add-port "br-ex" "eth1"))))
+(defn bridge-cfg
+  [{{:keys [name iface port] :as bridge} :bridge :as interfaces}]
+  (if bridge
+    (let [bridge (into core/iface-sorted-map
+                       {:iface "inet manual"
+                        :up ["ifconfig $IFACE 0.0.0.0 up"
+                             "ip link set $IFACE promisc on"]
+                        :down ["ip link set $IFACE promisc off"
+                               "ifconfig $IFACE 0.0.0.0 down"]})]
+      (if (not= (interfaces iface) bridge)
+        (assoc (dissoc interfaces :bridge)
+               iface bridge
+               name (interfaces iface))
+        (dissoc interfaces :bridge)))
+    interfaces))
+
+(defn merge-net-bridge-cfg [interfaces str-content]
+  (core/network-map->str
+    (bridge-cfg (core/merge-network-interfaces interfaces str-content))))
+
+(defplan open-vswitch [{{{:keys [name iface port]} :bridge :as interfaces} :interfaces}]
+  (service "openvswitch-switch" :action :start)
+  (add-bridge "br-int")
+  (add-bridge "br-ex")
+  (core/remote-manage-network-interfaces
+    (partial merge-net-bridge-cfg interfaces))
+  (restart-network-interfaces
+    (conj (filterv string? (map first interfaces)) name)
+    :if-flag "restart-network")
+  (when port (add-port name iface)))
 
 (defplan configure [{{:keys [user password]} :quantum
                      :as settings
@@ -75,3 +86,34 @@
                           (apply open-vswitch settings flags)
                           (configure settings))}
     :extends [(core/server-spec settings)]))
+
+(comment
+  
+  (assert
+    (= (let [s "# This file describes the network interfaces available on your system
+# and how to activate them. For more information, see interfaces(5).
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+# The primary network interface
+auto eth0
+iface eth0 inet dhcp"]
+         (merge-net-bridge-cfg
+           {:bridge {:name "br-ex" :iface "eth0" :port true}}
+           s))
+   "auto lo
+  iface lo inet loopback
+
+auto eth0
+  iface eth0 inet manual
+  up ifconfig $IFACE 0.0.0.0 up
+  up ip link set $IFACE promisc on
+  down ip link set $IFACE promisc off
+  down ifconfig $IFACE 0.0.0.0 down
+
+auto br-ex
+  iface br-ex inet dhcp"))
+  
+  )

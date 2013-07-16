@@ -56,7 +56,7 @@ what to set the mysql root user password"
     :extends [(core/server-spec settings)
               (keystone/server-spec settings)
               (glance/server-spec settings)
-              (quantum/server-spec settings :br-ex)
+              (quantum/server-spec settings)
               (nova/server-spec settings)
               (cinder/server-spec settings)
               (horizon/server-spec settings)]))

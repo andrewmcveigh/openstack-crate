@@ -1,6 +1,6 @@
 (ns pallet.crate.openstack.glance
   (:require
-    [pallet.actions :refer [package]]
+    [pallet.actions :refer [exec-script package]]
     [pallet.api :as api]
     [pallet.crate :refer [defplan]]
     [pallet.crate.openstack.core :as core
@@ -18,6 +18,7 @@
     "etc/glance/glance-registry-paste.ini" settings "restart-glance")
   (template-file "etc/glance/glance-api.conf" settings "restart-glance")
   (template-file "etc/glance/glance-registry.conf" settings "restart-glance")
+  (exec-script "glance-manage db_sync")
   (restart-services :flag "restart-glance" "glance-api" "glance-registry"))
 
 (defn server-spec [settings]

@@ -3,13 +3,14 @@
     [clojure.java.io :as io]
     [clojure.string :as string]
     [pallet.actions
-     :refer [exec-checked-script exec-script package package-manager packages
-             plan-when remote-file remote-file-content service
-             with-action-values]]
+     :refer [exec-checked-script exec-script package package-manager
+             package-source packages plan-when remote-file remote-file-content
+             service with-action-values]]
     [pallet.api :as api]
     [pallet.argument :refer [delayed]]
     [pallet.crate :as crate :refer [admin-user defplan]]
     [pallet.crate.automated-admin-user :refer [automated-admin-user]]
+    [pallet.crate.etc-hosts :as etc-hosts]
     [pallet.crate.mysql :as mysql]
     [pallet.crate.sudoers :as sudoers]
     [pallet.node :as node]
@@ -75,22 +76,20 @@
     "grub-pc grub-pc/timeout string 2"))
 
 (defplan bootstrap []
-  (packages :aptitude ["ubuntu-cloud-keyring" "python-software-properties"
-                       "software-properties-common" "python-keyring"])
+  (remote-file "/etc/hosts"
+               :template "etc/hosts"
+               :values {:hostname (node/hostname (crate/target-node))}
+               :mode "0644"
+               :owner "root"
+               :group "root")
   (remote-file "/etc/apt/sources.list"
                :local-file (local-file "etc/apt/sources.list")
                :owner "root"
                :group "root"
                :mode "0644")
-  (remote-file
-    "/etc/apt/sources.list.d/openstack-grizzly.list"
-    :content (str "deb http://ubuntu-cloud.archive.canonical.com/ubuntu "
-                  "precise-updates/grizzly main"))
   (package-manager :update)
-  (debconf-grub)
-  (package-manager :upgrade)
-  (debconf-grub)
-  (exec-script "apt-get -y dist-upgrade"))
+  (packages :aptitude ["ubuntu-cloud-keyring" "python-software-properties"
+                       "software-properties-common" "python-keyring"]))
 
 (def interface-snip
   "
@@ -148,7 +147,8 @@ only when there's a non-map at a particular level.
 (def iface-order-map
   (sorted-map-by (fn [a b]
                    (letfn [(order [x]
-                             (cond (.startsWith x "lo") 0
+                             (cond (not (string? x)) 100
+                                   (.startsWith x "lo") 0
                                    (.startsWith x "eth")
                                    (+ 1 (Integer. (string/replace x #"eth" "")))
                                    (.startsWith x "en")
@@ -273,7 +273,15 @@ only when there's a non-map at a particular level.
                      "quantum" {:ALL {:run-as-user :ALL :tags :NOPASSWD}}}))
      :install
      (api/plan-fn
+       (package-source "openstack-grizzly"
+                       :aptitude {:url "http://ubuntu-cloud.archive.canonical.com/ubuntu"
+                                  :scopes ["main"]
+                                  :release "precise-updates/grizzly"})
        (package-manager :update)
+       (debconf-grub)
+       (package-manager :upgrade)
+       (debconf-grub)
+       (exec-script "apt-get -y dist-upgrade")
        (mysql-install mysql-root-pass)
        (packages :aptitude ["rabbitmq-server" "ntp" "vlan" "bridge-utils"]))
      :configure
@@ -283,9 +291,15 @@ only when there's a non-map at a particular level.
                     :values settings
                     :literal true)
        (exec-script "source /etc/environment")
-       (when interfaces (configure-networking interfaces))
+       (when (seq (dissoc interfaces :bridge)) 0
+         (configure-networking interfaces))
        (exec-script (str "sed -i "
                          "'s/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' "
                          "/etc/sysctl.conf"))
        (exec-script "sysctl net.ipv4.ip_forward=1")
        (mysql-configure))}))
+
+  ;(remote-file
+    ;"/etc/apt/sources.list.d/openstack-grizzly.list"
+    ;:content (str "deb http://ubuntu-cloud.archive.canonical.com/ubuntu "
+                  ;"precise-updates/grizzly main"))
